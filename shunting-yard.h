@@ -13,6 +13,9 @@
 #include <memory>
 #include <utility>
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wignored-qualifiers"
+
 /*
  * About tokType enum:
  *
@@ -421,3 +424,6 @@ class calculator {
 };
 
 #endif  // SHUNTING_YARD_H_
+
+#pragma GCC diagnostic pop
+
