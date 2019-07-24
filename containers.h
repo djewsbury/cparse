@@ -166,7 +166,8 @@ struct TokenList : public Container<TokenList_t>, public Iterable {
     if (list().size() <= idx) {
       throw std::out_of_range("List index out of range!");
     }
-    return list()[idx];
+    TokenList_t::size_type i = TokenList_t::size_type(idx);
+    return list()[i];
   }
 
   void push(packToken val) const { list().push_back(val); }
