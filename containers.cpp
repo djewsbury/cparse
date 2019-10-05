@@ -79,7 +79,8 @@ packToken TokenList::default_constructor(TokenMap scope) {
 
 packToken* TokenList::ListIterator::next() {
   if (i < list->size()) {
-    return &list->at(i++);
+    auto idx = i++;
+    return &list->at((size_t)idx);
   } else {
     i = 0;
     return NULL;
