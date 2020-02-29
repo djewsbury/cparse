@@ -1,5 +1,6 @@
 #include "./shunting-yard.h"
 #include "./shunting-yard-exceptions.h"
+#include "./sharedObjects.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -84,13 +85,11 @@ TokenBase* resolve_reference(TokenBase* b, TokenMap* scope = 0) {
 
 // Build configurations once only:
 Config_t& calculator::Default() {
-  static Config_t conf;
-  return conf;
+  return CParseSharedObjects::GetInstance().conf;
 }
 
 typeMap_t& calculator::type_attribute_map() {
-  static typeMap_t type_map;
-  return type_map;
+  return CParseSharedObjects::GetInstance().type_map;
 }
 
 /* * * * * rpnBuilder Class: * * * * */
@@ -692,4 +691,31 @@ std::string calculator::str(TokenQueue_t rpn) {
   }
   ss << " ] }";
   return ss.str();
+}
+
+CParseSharedObjects::CParseSharedObjects()
+: _base_map(0)
+, global_map(_base_map)
+, none(packToken(TokenNone()))
+, str_custom(0)
+{
+}
+
+CParseSharedObjects::~CParseSharedObjects()
+{
+}
+
+CParseSharedObjects* CParseSharedObjects::s_instance = nullptr;
+
+CParseSharedObjects& CParseSharedObjects::GetInstance()
+{
+    if (!s_instance)
+        s_instance = new CParseSharedObjects();
+    return *s_instance;
+}
+
+void CParseSharedObjects::DestroyInstance()
+{
+    delete s_instance;
+    s_instance = nullptr;
 }

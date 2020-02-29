@@ -4,6 +4,7 @@
 
 #include "./containers.h"
 #include "./functions.h"
+#include "./sharedObjects.h"
 
 /* * * * * Initialize TokenMap * * * * */
 
@@ -14,13 +15,11 @@
 // - https://isocpp.org/wiki/faq/ctors#static-init-order
 //
 TokenMap& TokenMap::base_map() {
-  static TokenMap _base_map(0);
-  return _base_map;
+  return CParseSharedObjects::GetInstance()._base_map;
 }
 
 TokenMap& TokenMap::default_global() {
-  static TokenMap global_map(base_map());
-  return global_map;
+  return CParseSharedObjects::GetInstance().global_map;
 }
 
 packToken TokenMap::default_constructor(TokenMap scope) {

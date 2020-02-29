@@ -5,15 +5,14 @@
 #include "./shunting-yard.h"
 #include "./packToken.h"
 #include "./shunting-yard-exceptions.h"
+#include "./sharedObjects.h"
 
 const packToken& packToken::None() {
-  static packToken none = packToken(TokenNone());
-  return none;
+  return CParseSharedObjects::GetInstance().none;
 }
 
 packToken::strFunc_t& packToken::str_custom() {
-  static strFunc_t func = 0;
-  return func;
+  return CParseSharedObjects::GetInstance().str_custom;
 }
 
 packToken::packToken(const TokenMap& map) : base(new TokenMap(map)) {}
