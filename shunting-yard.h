@@ -423,7 +423,6 @@ class calculator {
   calculator& operator=(const calculator& calc);
 };
 
-#endif  // SHUNTING_YARD_H_
-
 #pragma GCC diagnostic pop
 
+#endif  // SHUNTING_YARD_H_
