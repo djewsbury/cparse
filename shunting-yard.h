@@ -12,6 +12,7 @@
 #include <sstream>
 #include <memory>
 #include <utility>
+#include <optional>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wignored-qualifiers"
@@ -183,10 +184,10 @@ struct rpnBuilder {
   static void cleanRPN(TokenQueue_t* rpn);
 
  public:
-  void handle_op(const std::string& op);
+  std::unique_ptr<std::exception> handle_op(const std::string& op);
   void handle_token(TokenBase* token);
   void open_bracket(const std::string& bracket);
-  void close_bracket(const std::string& bracket);
+  std::unique_ptr<std::exception> close_bracket(const std::string& bracket);
 
   // * * * * * Static parsing helpers: * * * * * //
 
@@ -376,6 +377,24 @@ struct Config_t {
           : parserMap(p), opPrecedence(opp), opMap(opMap) {}
 };
 
+template<typename T>
+  class ExceptionOrResult
+  {
+  public:
+    T&& get_value();
+    bool has_value() const;
+    const std::exception* try_get_exception() const;
+
+    ExceptionOrResult(T&&);
+    ExceptionOrResult(std::exception*);
+    ExceptionOrResult(std::unique_ptr<std::exception>&&);
+    ExceptionOrResult(ExceptionOrResult&&) = default;
+    ExceptionOrResult& operator=(ExceptionOrResult&&) = default;
+  private:
+    std::optional<T> result;
+    std::unique_ptr<std::exception> exception;
+  };
+
 class calculator {
  public:
   static Config_t& Default();
@@ -390,6 +409,10 @@ class calculator {
  public:
   static TokenBase* calculate(const TokenQueue_t& RPN, TokenMap scope,
                               const Config_t& config = Default());
+  static ExceptionOrResult<TokenQueue_t> 
+                      tryToRPN(const char* expr, TokenMap vars,
+                            const char* delim = 0, const char** rest = 0,
+                            Config_t config = Default());
   static TokenQueue_t toRPN(const char* expr, TokenMap vars,
                             const char* delim = 0, const char** rest = 0,
                             Config_t config = Default());

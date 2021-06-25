@@ -11,6 +11,34 @@
 #include <utility>  // For std::pair
 #include <cstring>  // For strchr()
 
+template<typename T>
+  T&& ExceptionOrResult<T>::get_value()
+  {
+    if (result.has_value()) return std::move(result.value());
+    if (exception) throw *exception;
+    throw std::runtime_error("Missing value in ExceptionOrResult class");
+  }
+template<typename T>
+  bool ExceptionOrResult<T>::has_value() const
+  {
+    return result.has_value();
+  }
+template<typename T>
+  const std::exception* ExceptionOrResult<T>::try_get_exception() const
+  {
+    if (!result.has_value()) return exception.get();
+    return nullptr;
+  }
+
+template<typename T>
+  ExceptionOrResult<T>::ExceptionOrResult(T&&value) : result(std::move(value)) {}
+template<typename T>
+  ExceptionOrResult<T>::ExceptionOrResult(std::exception*e) : exception(e) {}
+template<typename T>
+  ExceptionOrResult<T>::ExceptionOrResult(std::unique_ptr<std::exception>&&e) : exception(std::move(e)) {}
+
+template class ExceptionOrResult<TokenQueue_t>;
+
 /* * * * * Operation class: * * * * */
 
 // Convert a type into an unique mask for bit wise operations:
@@ -164,7 +192,7 @@ void rpnBuilder::handle_right_unary(const std::string& unary_op) {
 }
 
 // Find out if op is a binary or unary operator and handle it:
-void rpnBuilder::handle_op(const std::string& op) {
+std::unique_ptr<std::exception> rpnBuilder::handle_op(const std::string& op) {
   // If its a left unary operator:
   if (this->lastTokenWasOp) {
     if (opp.exists("L"+op)) {
@@ -173,7 +201,7 @@ void rpnBuilder::handle_op(const std::string& op) {
       this->lastTokenWasOp = op[0];
     } else {
       cleanRPN(&(this->rpn));
-      throw std::domain_error(
+      return std::make_unique<std::domain_error>(
           "Unrecognized unary operator: '" + op + "'.");
     }
 
@@ -192,13 +220,14 @@ void rpnBuilder::handle_op(const std::string& op) {
       handle_binary(op);
     } else {
       cleanRPN(&(rpn));
-      throw std::domain_error(
+      return std::make_unique<std::domain_error>(
           "Undefined operator: `" + op + "`!");
     }
 
     this->lastTokenWasUnary = false;
     this->lastTokenWasOp = op[0];
   }
+  return nullptr;
 }
 
 void rpnBuilder::handle_token(TokenBase* token) {
@@ -214,7 +243,7 @@ void rpnBuilder::open_bracket(const std::string& bracket) {
   ++bracketLevel;
 }
 
-void rpnBuilder::close_bracket(const std::string& bracket) {
+std::unique_ptr<std::exception> rpnBuilder::close_bracket(const std::string& bracket) {
   if (lastTokenWasOp == bracket[0]) {
     rpn.push(new Tuple());
   }
@@ -228,13 +257,14 @@ void rpnBuilder::close_bracket(const std::string& bracket) {
 
   if (opStack.size() == 0) {
     rpnBuilder::cleanRPN(&rpn);
-    throw syntax_error("Extra '" + bracket + "' on the expression!");
+    return std::make_unique<syntax_error>("Extra '" + bracket + "' on the expression!");
   }
 
   opStack.pop();
   lastTokenWasOp = false;
   lastTokenWasUnary = false;
   --bracketLevel;
+  return nullptr;
 }
 
 /* * * * * RAII_TokenQueue_t struct  * * * * */
@@ -259,7 +289,8 @@ struct calculator::RAII_TokenQueue_t : TokenQueue_t {
 
 /* * * * * calculator class * * * * */
 
-TokenQueue_t calculator::toRPN(const char* expr,
+ExceptionOrResult<TokenQueue_t> 
+          calculator::tryToRPN(const char* expr,
                                TokenMap vars, const char* delim,
                                const char** rest, Config_t config) {
   rpnBuilder data(vars, config.opPrecedence);
@@ -271,7 +302,7 @@ TokenQueue_t calculator::toRPN(const char* expr,
   while (*expr && isspace(*expr) && !strchr(delim, *expr)) ++expr;
 
   if (*expr == '\0' || strchr(delim, *expr)) {
-    throw std::invalid_argument("Cannot build a calculator from an empty expression!");
+    return new std::invalid_argument("Cannot build a calculator from an empty expression!");
   }
 
   // In one pass, ignore whitespace and parse the expression into RPN
@@ -279,7 +310,9 @@ TokenQueue_t calculator::toRPN(const char* expr,
   while (*expr && (data.bracketLevel || !strchr(delim, *expr))) {
     if (isdigit(*expr)) {
       // If the token is a number, add it to the output queue.
-      int64_t _int = strtoll(expr, &nextChar, 10);
+      // DavidJ -- use "0" as the base argument so that octal/hex prefixes are supported
+      //    note however, this may cause odditied with inputs like "0x12.34" or "0x12e34" 
+      int64_t _int = strtoll(expr, &nextChar, 0);
 
       // If the number was not a float:
       if (!strchr(".eE", *nextChar)) {
@@ -349,7 +382,7 @@ TokenQueue_t calculator::toRPN(const char* expr,
       if (*expr != quote) {
         std::string squote = (quote == '"' ? "\"": "'");
         rpnBuilder::cleanRPN(&data.rpn);
-        throw syntax_error("Expected quote (" + squote +
+        return new syntax_error("Expected quote (" + squote +
                            ") at end of string declaration: " + squote + ss.str() + ".");
       }
       ++expr;
@@ -361,7 +394,8 @@ TokenQueue_t calculator::toRPN(const char* expr,
         // If it is a function call:
         if (data.lastTokenWasOp == false) {
           // This counts as a bracket and as an operator:
-          data.handle_op("()");
+          auto e = data.handle_op("()");
+          if (e) return e;
           // Add it as a bracket to the op stack:
         }
         data.open_bracket("(");
@@ -370,14 +404,16 @@ TokenQueue_t calculator::toRPN(const char* expr,
       case '[':
         if (data.lastTokenWasOp == false) {
           // If it is an operator:
-          data.handle_op("[]");
+          auto e = data.handle_op("[]");
+          if (e) return e;
         } else {
           // If it is the list constructor:
           // Add the list constructor to the rpn:
           data.handle_token(new CppFunction(&TokenList::default_constructor, "list"));
 
           // We make the program see it as a normal function call:
-          data.handle_op("()");
+          auto e = data.handle_op("()");
+          if (e) return e;
         }
         // Add it as a bracket to the op stack:
         data.open_bracket("[");
@@ -388,20 +424,32 @@ TokenQueue_t calculator::toRPN(const char* expr,
         data.handle_token(new CppFunction(&TokenMap::default_constructor, "map"));
 
         // We make the program see it as a normal function call:
-        data.handle_op("()");
+        {
+          auto e = data.handle_op("()");
+          if (e) return e;
+        }
         data.open_bracket("{");
         ++expr;
         break;
       case ')':
-        data.close_bracket("(");
+        {
+          auto e = data.close_bracket("(");
+          if (e) return e;
+        }
         ++expr;
         break;
       case ']':
-        data.close_bracket("[");
+        {
+          auto e = data.close_bracket("[");
+          if (e) return e;
+        }
         ++expr;
         break;
       case '}':
-        data.close_bracket("{");
+        {
+          auto e = data.close_bracket("{");
+          if (e) return e;
+        }
         ++expr;
         break;
       default:
@@ -434,7 +482,8 @@ TokenQueue_t calculator::toRPN(const char* expr,
               throw;
             }
           } else if (data.opp.exists(op)) {
-            data.handle_op(op);
+            auto e = data.handle_op(op);
+            if (e) return e;
           } else if ((parser=config.parserMap.find(op[0]))) {
             expr = start+1;
             try {
@@ -445,7 +494,7 @@ TokenQueue_t calculator::toRPN(const char* expr,
             }
           } else {
             rpnBuilder::cleanRPN(&data.rpn);
-            throw syntax_error("Invalid operator: " + op);
+            return new syntax_error("Invalid operator: " + op);
           }
         }
       }
@@ -458,7 +507,7 @@ TokenQueue_t calculator::toRPN(const char* expr,
   // Check for syntax errors (excess of operators i.e. 10 + + -1):
   if (data.lastTokenWasUnary) {
     rpnBuilder::cleanRPN(&data.rpn);
-    throw syntax_error("Expected operand after unary operator `" + data.opStack.top() + "`");
+    return new syntax_error("Expected operand after unary operator `" + data.opStack.top() + "`");
   }
 
   std::string cur_op;
@@ -471,7 +520,20 @@ TokenQueue_t calculator::toRPN(const char* expr,
   // In case one of the custom parsers left an empty expression:
   if (data.rpn.size() == 0) data.rpn.push(new TokenNone());
   if (rest) *rest = expr;
-  return data.rpn;
+  return std::move(data.rpn);
+}
+
+TokenQueue_t calculator::toRPN(const char* expr, TokenMap vars,
+                               const char* delim, const char** rest,
+                               Config_t config)
+{
+  auto e = tryToRPN(expr, vars, delim, rest, config);
+  if (e.has_value())
+    return e.get_value();
+  auto except = e.try_get_exception();
+  if (!except)
+    throw std::runtime_error("Missing result from tryToRPN");
+  throw *except;
 }
 
 packToken calculator::calculate(const char* expr, TokenMap vars,
